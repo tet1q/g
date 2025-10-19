@@ -1,3 +1,5 @@
+// api/analyze.js
+
 import { Chess } from 'chess.js';
 // Impor buku pembukaan yang baru kita buat
 import { openingBook } from './openingBook.js';
@@ -33,18 +35,21 @@ export default async function handler(req, res) {
     if (openingBook[fen]) {
         console.log("Position is in the opening book. Playing a random move.");
         
-        const possibleMoves = openingBook[fen];
+        const bookEntry = openingBook[fen]; // <-- PERUBAHAN: Ambil seluruh entri buku (objek)
+        const possibleMoves = bookEntry.moves; // <-- PERUBAHAN: Ambil array 'moves' dari objek
+        const openingName = bookEntry.name; // <-- PERUBAHAN: Ambil nama pembukaan
+
         const randomSanMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
         
-        // Gunakan chess.js untuk mengonversi langkah SAN ke format UCI
         const moveObject = chess.move(randomSanMove);
         const uciMove = moveObject.from + moveObject.to;
         
         return res.status(200).json({
             success: true,
             note: "Playing a book move.",
-            bestmove: uciMove, // Selalu dalam format UCI
-            evaluation: 0.2, // Perkiraan evaluasi
+            openingName: openingName, // <-- PERUBAHAN: Tambahkan nama pembukaan ke respons
+            bestmove: uciMove,
+            evaluation: 0.2,
             winChance: 52.5,
         });
     }
