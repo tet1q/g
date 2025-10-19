@@ -1,20 +1,12 @@
 {
-  "name": "vercel-stockfish-api",
+  "name": "vercel-final-api",
   "version": "1.0.0",
-  "description": "A serverless API to analyze chess positions using Stockfish.js on Vercel.",
-  "main": "api/analyze.js",
   "type": "module",
+  "description": "A lightweight, Vercel-native chess analysis API.",
+  "main": "api/analyze.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [
-    "chess",
-    "stockfish",
-    "api",
-    "vercel"
-  ],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "chess.js": "^1.4.0",
     "stockfish.js": "^10.0.2"
