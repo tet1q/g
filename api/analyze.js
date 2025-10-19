@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
   }
 
-  // UBAH DI SINI: Turunkan depth default dari 15 ke 12
+  // Turunkan depth default ke 12, angka yang sangat aman untuk Vercel.
   const { fen, depth = 12 } = req.body;
 
   if (!fen) {
@@ -26,6 +26,7 @@ export default async function handler(req, res) {
     let evaluation = null;
 
     await new Promise((resolve, reject) => {
+      // Timeout 9.5 detik untuk menjaga agar tidak crash
       const analysisTimeout = setTimeout(() => {
         engine.postMessage('quit');
         reject(new Error("Analysis timed out after 9.5 seconds. Please use a lower depth."));
@@ -33,12 +34,15 @@ export default async function handler(req, res) {
 
       engine.onmessage = function (event) {
         const line = event.data || event;
-        console.log("Stockfish.js:", line);
+        console.log("Stockfish.js:", line); // Log untuk debugging
 
-        if (line.includes('score cp')) {
-          const scoreMatch = line.match(/score cp (-?\d+)/);
+        // Versi lama terkadang menggunakan 'cp' atau 'mate'
+        if (line.includes('score')) {
+          const scoreMatch = line.match(/score (cp|mate) (-?\d+)/);
           if (scoreMatch) {
-            evaluation = parseInt(scoreMatch[1], 10) / 100.0;
+            const scoreType = scoreMatch[1];
+            const scoreValue = parseInt(scoreMatch[2], 10);
+            evaluation = scoreType === 'cp' ? scoreValue / 100.0 : `M${scoreValue}`;
           }
         }
 
@@ -54,18 +58,10 @@ export default async function handler(req, res) {
       engine.postMessage(`go depth ${depth}`);
     });
 
-    if (bestMove) {
-      res.status(200).json({
-        fen,
-        bestmove: bestMove,
-        evaluation,
-        depth
-      });
-    } else {
-      throw new Error("Analysis completed but failed to find a best move.");
-    }
+    res.status(200).json({ fen, bestmove: bestMove, evaluation, depth });
+
   } catch (error) {
-    console.error('Stockfish.js analysis error:', error.message);
+    console.error('Analysis error:', error.message);
     res.status(500).json({
       error: 'Failed to analyze the position.',
       details: error.message
