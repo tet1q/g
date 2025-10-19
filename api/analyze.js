@@ -5,7 +5,7 @@ import { openingBook } from './openingBook.js';
 
 const EXTERNAL_API_URL = "https://stockfish.online/api/s/v2.php";
 
-// Fungsi kalkulasi Win Chance (tidak berubah)
+// Fungsi kalkulasi Win Chance
 function calculateWinChanceLichess(evaluation, mate) {
     if (mate !== null) return mate > 0 ? 100.0 : 0.0;
     if (typeof evaluation !== 'number') return 50.0;
@@ -14,28 +14,16 @@ function calculateWinChanceLichess(evaluation, mate) {
     return parseFloat(winChance.toFixed(2));
 }
 
-/**
- * Fungsi baru untuk mencari posisi di buku pembukaan secara lebih toleran.
- * Fungsi ini hanya membandingkan 3 bagian pertama dari FEN (posisi, giliran, rokade).
- * @param {string} fen - FEN yang masuk dari klien.
- * @returns {object|null} - Entri buku jika ditemukan, atau null jika tidak.
- */
+// Fungsi pencarian buku yang fleksibel
 function findBookMove(fen) {
-    // Ambil 3 bagian inti dari FEN yang masuk: [posisi, giliran, rokade]
     const incomingFenParts = fen.split(' ').slice(0, 3).join(' ');
-
     for (const bookFenKey in openingBook) {
-        // Ambil 3 bagian inti dari setiap kunci FEN di buku kita
         const bookKeyParts = bookFenKey.split(' ').slice(0, 3).join(' ');
-        
-        // Jika bagian intinya cocok, kita menemukan posisi di buku!
         if (incomingFenParts === bookKeyParts) {
             console.log(`[Book] Match found! Incoming FEN core: ${incomingFenParts}`);
-            return openingBook[bookFenKey]; // Kembalikan seluruh entri buku
+            return openingBook[bookFenKey];
         }
     }
-    
-    // Jika loop selesai dan tidak ada yang cocok
     return null;
 }
 
@@ -57,53 +45,35 @@ export default async function handler(req, res) {
     } 
     catch (e) { return res.status(400).json({ error: 'Invalid FEN string.' }); }
 
-    // --- LOGIKA BUKU PEMBUKAAN YANG DIPERBARUI ---
+    // --- LOGIKA BUKU PEMBUKAAN ---
     const bookEntry = findBookMove(fen);
 
     if (bookEntry) {
         console.log(`[Book] Position is in the opening book. Found name: "${bookEntry.name}".`);
-        
         const possibleMoves = bookEntry.moves;
         const openingName = bookEntry.name;
         const randomSanMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-        
-        console.log(`[Book] Attempting to play book move (SAN): ${randomSanMove}`);
         const moveObject = chess.move(randomSanMove, { sloppy: true });
         
         if (!moveObject) {
-            console.error(`[Book] CRITICAL: The SAN move "${randomSanMove}" is invalid for FEN "${fen}". Check your openingBook.js!`);
-            return res.status(500).json({ 
-                success: false, 
-                error: "Internal Server Error: Invalid book move found.",
-                details: `Move ${randomSanMove} is not valid.`
-            });
+            console.error(`[Book] CRITICAL: The SAN move "${randomSanMove}" is invalid for FEN "${fen}".`);
+            return res.status(500).json({ success: false, error: "Internal Server Error: Invalid book move found." });
         }
         
         const uciMove = moveObject.from + moveObject.to;
         console.log(`[Book] Successfully converted to UCI: ${uciMove}. Sending response.`);
-        
-        return res.status(200).json({
-            success: true,
-            note: "Playing a book move.",
-            openingName: openingName,
-            bestmove: uciMove,
-            evaluation: 0.2,
-            winChance: 52.5,
-        });
+        return res.status(200).json({ success: true, note: "Playing a book move.", openingName: openingName, bestmove: uciMove, evaluation: 0.2, winChance: 52.5 });
     }
 
-    // Menangani permintaan "hanya cek buku" dari skrip Lua (depth=0)
+    // --- LOGIKA PERMINTAAN BOOK-ONLY (depth=0) ---
     if (depth === 0) {
         console.log(`[Book] Book-only check requested, but no match found for FEN: ${fen}`);
-        return res.status(200).json({
-            success: true,
-            note: "Position is out of book.",
-        });
+        return res.status(200).json({ success: true, note: "Position is out of book." });
     }
-    // --- AKHIR LOGIKA BUKU PEMBUKAAN ---
 
+    // --- LOGIKA STOCKFISH ---
     console.log(`[Stockfish] Position is out of book. Analyzing with Stockfish at depth ${depth}.`);
-    if (depth > 15) depth = 15; // Batasi depth maksimum untuk mencegah timeout
+    if (depth > 15) depth = 15;
 
     try {
         const url = new URL(EXTERNAL_API_URL);
@@ -115,10 +85,24 @@ export default async function handler(req, res) {
 
         if (data.success === false) throw new Error(data.error || 'API call failed');
         
-        const uciBestMove = data.bestmove.split(' ')[0];
+        // --- PERBAIKAN KRUSIAL: Ambil langkah dari 'continuation' ---
+        let uciBestMove;
+        if (data.continuation && typeof data.continuation === 'string' && data.continuation.length > 0) {
+            uciBestMove = data.continuation.split(' ')[0];
+        } else {
+            console.error('[Stockfish] CRITICAL: "continuation" field is missing from external API. Response:', data);
+            throw new Error('Invalid response from analysis engine: missing continuation.');
+        }
+
+        if (!/^[a-h][1-8][a-h][1-8]/.test(uciBestMove)) {
+             console.error('[Stockfish] CRITICAL: Parsed move is not valid UCI format. Parsed:', uciBestMove);
+             throw new Error('Invalid response from analysis engine: malformed move.');
+        }
+        // --- AKHIR DARI PERBAIKAN ---
+        
         const winChanceForWhite = calculateWinChanceLichess(data.evaluation, data.mate);
 
-        console.log(`[Stockfish] Analysis complete. Best move: ${uciBestMove}`);
+        console.log(`[Stockfish] Analysis complete. Best move parsed: ${uciBestMove}`);
         return res.status(200).json({
             success: true,
             bestmove: uciBestMove,
