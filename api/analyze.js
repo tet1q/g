@@ -7,7 +7,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
   }
 
-  const { fen, depth = 15 } = req.body;
+  // UBAH DI SINI: Turunkan depth default dari 15 ke 12
+  const { fen, depth = 12 } = req.body;
 
   if (!fen) {
     return res.status(400).json({ error: 'FEN string is required' });
@@ -27,7 +28,7 @@ export default async function handler(req, res) {
     await new Promise((resolve, reject) => {
       const analysisTimeout = setTimeout(() => {
         engine.postMessage('quit');
-        reject(new Error("Analysis timed out after 9.5 seconds. Try a lower depth."));
+        reject(new Error("Analysis timed out after 9.5 seconds. Please use a lower depth."));
       }, 9500);
 
       engine.onmessage = function (event) {
