@@ -2,13 +2,12 @@
   "name": "vercel-final-api",
   "version": "1.0.0",
   "type": "module",
-  "description": "A lightweight, Vercel-native chess analysis API.",
+  "description": "A lightweight proxy API for chess analysis, running on Vercel.",
   "main": "api/analyze.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "chess.js": "^1.4.0",
-    "stockfish.js": "^10.0.2"
+    "chess.js": "^1.4.0"
   }
 }
