@@ -1,5 +1,7 @@
 import { Chess } from 'chess.js';
-import stockfish from 'stockfish.js';
+
+// URL dari API publik yang gratis dan tidak butuh verifikasi
+const EXTERNAL_API_URL = "https://chess-api.com/v1";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -7,63 +9,45 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
   }
 
-  // Turunkan depth default ke 12, angka yang sangat aman untuk Vercel.
   const { fen, depth = 12 } = req.body;
 
   if (!fen) {
     return res.status(400).json({ error: 'FEN string is required' });
   }
 
+  // Validasi FEN menggunakan chess.js
   try {
     new Chess(fen);
   } catch (e) {
     return res.status(400).json({ error: 'Invalid FEN string.' });
   }
 
+  // Panggil API eksternal untuk melakukan pekerjaan berat
   try {
-    const engine = stockfish();
-    let bestMove = '';
-    let evaluation = null;
-
-    await new Promise((resolve, reject) => {
-      // Timeout 9.5 detik untuk menjaga agar tidak crash
-      const analysisTimeout = setTimeout(() => {
-        engine.postMessage('quit');
-        reject(new Error("Analysis timed out after 9.5 seconds. Please use a lower depth."));
-      }, 9500);
-
-      engine.onmessage = function (event) {
-        const line = event.data || event;
-        console.log("Stockfish.js:", line); // Log untuk debugging
-
-        // Versi lama terkadang menggunakan 'cp' atau 'mate'
-        if (line.includes('score')) {
-          const scoreMatch = line.match(/score (cp|mate) (-?\d+)/);
-          if (scoreMatch) {
-            const scoreType = scoreMatch[1];
-            const scoreValue = parseInt(scoreMatch[2], 10);
-            evaluation = scoreType === 'cp' ? scoreValue / 100.0 : `M${scoreValue}`;
-          }
-        }
-
-        if (line.startsWith('bestmove')) {
-          bestMove = line.split(' ')[1];
-          clearTimeout(analysisTimeout);
-          engine.postMessage('quit');
-          resolve();
-        }
-      };
-
-      engine.postMessage(`position fen ${fen}`);
-      engine.postMessage(`go depth ${depth}`);
+    const externalResponse = await fetch(EXTERNAL_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fen, depth }),
     });
 
-    res.status(200).json({ fen, bestmove: bestMove, evaluation, depth });
+    // Jika API eksternal error, teruskan informasinya
+    if (!externalResponse.ok) {
+      const errorData = await externalResponse.json();
+      return res.status(externalResponse.status).json({
+        error: 'External analysis service failed.',
+        details: errorData,
+      });
+    }
+
+    const result = await externalResponse.json();
+    
+    // Kirim kembali hasil dari API eksternal ke pengguna
+    return res.status(200).json(result);
 
   } catch (error) {
-    console.error('Analysis error:', error.message);
-    res.status(500).json({
-      error: 'Failed to analyze the position.',
+    console.error('Error contacting external API:', error.message);
+    return res.status(502).json({
+      error: 'Could not connect to the analysis service.',
       details: error.message
     });
   }
